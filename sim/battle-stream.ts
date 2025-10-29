@@ -41,22 +41,24 @@ function splitFirst(str: string, delimiter: string, limit = 1) {
 }
 
 export class BattleStream extends Streams.ObjectReadWriteStream<string> {
-	debug: boolean;
-	noCatch: boolean;
-	replay: boolean | 'spectator';
-	keepAlive: boolean;
-	battle: Battle | null;
+        debug: boolean;
+        noCatch: boolean;
+        replay: boolean | 'spectator';
+        keepAlive: boolean;
+        battle: Battle | null;
+        initialSeed: PRNGSeed | null;
 
-	constructor(options: {
-		debug?: boolean, noCatch?: boolean, keepAlive?: boolean, replay?: boolean | 'spectator',
-	} = {}) {
-		super();
-		this.debug = !!options.debug;
-		this.noCatch = !!options.noCatch;
-		this.replay = options.replay || false;
-		this.keepAlive = !!options.keepAlive;
-		this.battle = null;
-	}
+        constructor(options: {
+                debug?: boolean, noCatch?: boolean, keepAlive?: boolean, replay?: boolean | 'spectator', seed?: PRNGSeed,
+        } = {}) {
+                super();
+                this.debug = !!options.debug;
+                this.noCatch = !!options.noCatch;
+                this.replay = options.replay || false;
+                this.keepAlive = !!options.keepAlive;
+                this.battle = null;
+                this.initialSeed = options.seed ?? null;
+        }
 
 	override _write(chunk: string) {
 		if (this.noCatch) {
@@ -99,9 +101,10 @@ export class BattleStream extends Streams.ObjectReadWriteStream<string> {
 
 	_writeLine(type: string, message: string) {
 		switch (type) {
-		case 'start':
-			const options = JSON.parse(message);
-			options.send = (t: string, data: any) => {
+                case 'start':
+                        const options = JSON.parse(message);
+                        if (this.initialSeed && !options.seed) options.seed = this.initialSeed;
+                        options.send = (t: string, data: any) => {
 				if (Array.isArray(data)) data = data.join("\n");
 				this.pushMessage(t, data);
 				if (t === 'end' && !this.keepAlive) this.pushEnd();

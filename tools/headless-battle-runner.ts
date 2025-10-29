@@ -9,10 +9,14 @@
  * @license MIT
  */
 
+import {createWriteStream} from 'node:fs';
 import {parseArgs} from 'node:util';
 
 import {Streams} from '../lib';
 import {BattleStream} from '../sim/battle-stream';
+import {Dex} from '../sim/dex';
+import {PRNG} from '../sim/prng';
+import type {PRNGSeed} from '../sim/prng';
 
 type LogFormat = 'text' | 'json';
 
@@ -22,6 +26,8 @@ interface CLIOptions {
         'keep-alive': boolean;
         replay: boolean | 'spectator' | undefined;
         'log-format': LogFormat;
+        seed?: string;
+        'log-file'?: string;
 }
 
 const LOG_FORMATS: readonly LogFormat[] = ['text', 'json'];
@@ -95,7 +101,44 @@ function parseReplayOption(value: unknown): boolean | 'spectator' | undefined {
         return undefined;
 }
 
+function parseSeed(value: unknown): PRNGSeed | null {
+        if (value === undefined) return null;
+        if (typeof value !== 'string') {
+                console.error('Seed must be provided as a string.');
+                process.exit(1);
+        }
+        const trimmed = value.trim();
+        if (!trimmed) {
+                console.error('Seed cannot be an empty string.');
+                process.exit(1);
+        }
+        if (trimmed.toLowerCase() === 'random') return PRNG.generateSeed();
+        try {
+                const prng = new PRNG(trimmed as PRNGSeed);
+                return prng.startingSeed;
+        } catch (err) {
+                console.error(`Invalid seed "${value}".`);
+                console.error(err instanceof Error ? err.message : err);
+                process.exit(1);
+        }
+}
+
+function openLogFile(path: string) {
+        if (!path) {
+                console.error('Log file path cannot be empty.');
+                process.exit(1);
+        }
+        const stream = createWriteStream(path, {flags: 'w'});
+        stream.on('error', err => {
+                console.error(`Failed to write log output to ${path}:`, err);
+                process.exit(1);
+        });
+        return stream;
+}
+
 function main() {
+        Dex.includeFormats();
+
         const parsed = parseArgs({
                 options: {
                         debug: {type: 'boolean', default: false},
@@ -103,6 +146,8 @@ function main() {
                         'keep-alive': {type: 'boolean', default: false},
                         replay: {type: 'string'},
                         'log-format': {type: 'string', default: 'text'},
+                        seed: {type: 'string'},
+                        'log-file': {type: 'string'},
                 },
                 strict: false,
                 allowPositionals: true,
@@ -111,12 +156,19 @@ function main() {
         const values = parsed.values as unknown as Partial<CLIOptions>;
         const logFormat = parseLogFormat(values['log-format']);
         const replay = parseReplayOption(values.replay);
+        const seed = parseSeed(values.seed);
+
+        const logFile = values['log-file'];
+        const output = logFile
+                ? new Streams.WriteStream({nodeStream: openLogFile(logFile)})
+                : Streams.stdout();
 
         const battleStream = new BattleStream({
                 debug: !!values.debug,
                 noCatch: !!values['no-catch'],
                 keepAlive: !!values['keep-alive'],
                 replay: replay ?? false,
+                seed: seed ?? undefined,
         });
 
         const input = Streams.stdin();
@@ -126,21 +178,20 @@ function main() {
         });
 
         if (logFormat === 'json') {
-                void pipeJsonOutput(battleStream).catch(err => {
+                void pipeJsonOutput(battleStream, output).catch(err => {
                         console.error('Failed to write BattleStream output:', err);
                         process.exitCode = 1;
                 });
                 return;
         }
 
-        const output = Streams.stdout();
         void battleStream.pipeTo(output).catch(err => {
                 console.error('Failed to write BattleStream output:', err);
                 process.exitCode = 1;
         });
 }
 
-async function pipeJsonOutput(stream: BattleStream) {
+async function pipeJsonOutput(stream: BattleStream, writer: Streams.WriteStream) {
         const formatter = new JsonLogFormatter();
         for await (const chunk of stream) {
                 const lines = chunk.split('\n');
@@ -148,9 +199,12 @@ async function pipeJsonOutput(stream: BattleStream) {
                         if (!raw) continue;
                         const entry = formatter.format(raw);
                         if (!entry) continue;
-                        process.stdout.write(`${JSON.stringify(entry)}\n`);
+                        const json = `${JSON.stringify(entry)}\n`;
+                        const result = writer.write(json);
+                        if (result) await result;
                 }
         }
+        await writer.writeEnd();
 }
 
 void main();
