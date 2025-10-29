@@ -18,6 +18,29 @@ been generated yet.
 Once the build has completed you can launch the runner with either
 `npm run headless-battle` or directly via `node tools/headless-battle-runner.js`.
 
+The runner eagerly loads format data by calling `Dex.includeFormats()` at
+startup. Caches are scoped to a single Node.js process, so if you are managing
+multiple workers you should repeat that call in each worker (or ensure that the
+worker is started only after the main thread has completed the call). No
+cross-process coordination is required.
+
+## CLI options
+
+The following flags can be passed directly to `tools/headless-battle-runner.js`:
+
+- `--log-format [text|json]` – Controls whether battle updates are emitted as
+  plaintext or newline-delimited JSON documents (the default remains `text`).
+- `--seed <value>` – Supplies a deterministic PRNG seed for every battle that
+  starts within the process. Supplying `--seed=random` generates a unique seed
+  when the process launches and reuses that value for subsequent battles.
+- `--log-file <path>` – Writes all battle logs to the provided file path
+  instead of STDOUT. This is useful for automated harnesses such as poke-env
+  that orchestrate multiple runner instances concurrently and want to avoid
+  colliding file handles.
+- `--debug`, `--no-catch`, `--keep-alive`, and `--replay` – Mirror the options
+  accepted by `BattleStream` and provide finer control over simulator
+  behaviour.
+
 ## poke-env usage example
 
 When integrating with poke-env from a Python virtual environment you can
