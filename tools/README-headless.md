@@ -37,6 +37,14 @@ The following flags can be passed directly to `tools/headless-battle-runner.js`:
   instead of STDOUT. This is useful for automated harnesses such as poke-env
   that orchestrate multiple runner instances concurrently and want to avoid
   colliding file handles.
+- `--p1-team-file <path>` / `--p2-team-file <path>` – Supplies prebuilt teams
+  for each side by reading the exported text (or JSON/packed) formats that
+  poke-env produces. The runner validates and packs these teams before sending
+  them to the battle stream.
+- `--interactive-stdin` – Forwards STDIN to the simulator without any
+  preprocessing so that external controllers can stream commands like
+  `>player p1 team` directly. This mode cannot be combined with the team file
+  options.
 - `--debug`, `--no-catch`, `--keep-alive`, and `--replay` – Mirror the options
   accepted by `BattleStream` and provide finer control over simulator
   behaviour.
